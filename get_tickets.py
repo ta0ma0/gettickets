@@ -5,10 +5,16 @@ from bs4 import BeautifulSoup
 import json
 from sys import argv, exit
 
+url = 'https://hp.beget.ru/customerinfo'
+url_main = 'https://hp.beget.ru/main'
+params = {'ajaxj':'', 'method': 'ajaxj_get_customer_tickets'}
+params_for_id = {'ajaxj':'', 'method': 'ajaxj_search_client_widget'}
+
+
 try:
     argv[1]
 except IndexError:
-    print("Введите ID кастомера: get_tickets.py 2343322")  
+    print("Введите ID кастомера или его логин: get_tickets.py 2343322")  
     exit()
 
 
@@ -30,36 +36,45 @@ def get_token():
 
 def get_tickets():
     r = requests.post(url+str(customer_id), cookies = cookies, params = params)
-    with open ('result.html', 'w') as file:
+    with open ('result.json', 'w') as file:
         file.write(r.text)
-    with open ('result.html', 'r') as file:
+    with open ('result.json', 'r') as file:
         cust_page = file.read()
     return cust_page
+
+def is_login(string):
+    return any(char.isalpha() for char in string)
+
+def get_id(customer):
+    r = requests.post(url_main, cookies = cookies, params = params_for_id, data = {'search_str':customer + '!'})
+    return r
+
 
 try:
     read_token()
 except IOError:
     get_token()
 
+
 token_raw = read_token()
-
-url = 'https://hp.beget.ru/customerinfo'
-
-try:
-    customer_id = int(argv[1])
-except IndexError:
-    print('Введите ID кастомера: get_tickets.py 2343322')
-    exit()
-
 cookies = {'begetInnerJWT': token_raw }
-params = {'ajaxj':'', 'method': 'ajaxj_get_customer_tickets'}
+customer = argv[1]
+
+
+if is_login(argv[1]):
+    try:
+        customer_id = get_id(customer).json()[0].get('id')
+    except IndexError:
+        print("По логину не найдено, попробуй по ID")
+        exit()
+else:
+    customer_id = argv[1]
 
 cust_page = get_tickets()
-
-
-
 soup = BeautifulSoup(cust_page, "html.parser")
 tikets_data = soup.text
+
+
 try:
     tickets_dict = json.loads(tikets_data)
 except json.decoder.JSONDecodeError:
@@ -67,10 +82,12 @@ except json.decoder.JSONDecodeError:
     get_token()
     cust_page = get_tickets()
 
+if tickets_dict.get('tickets') == []:
+    print("Неверный ID, или клиент не написал ни одного тикета.")
+
 tickets_all = tickets_dict.get('tickets')
 count = 3
 for el in tickets_all:
-#    print(el)
     if count > 0:
         print('https://hp.beget.ru/helpdesk/ticket/' + str(el.get('id')), el.get('subject'))
         count -= 1
